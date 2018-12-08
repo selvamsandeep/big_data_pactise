@@ -1,0 +1,66 @@
+sqoop import  \
+	--connect "jdbc:mysql://quickstart:3306/retail_db" \
+	--username retail_dba \
+	--password cloudera \
+	--table orders \
+	--target-dir /user/cloudera/problem5/text \
+	--as-textfile \
+	--fields-terminated-by '\t' \
+	--lines-terminated-by '\n' \
+	--m 1
+hadoop fs -ls /user/cloudera/problem5/text
+
+sqoop import \
+	--connect "jdbc:mysql://quickstart:3306/retail_db" \
+	--username retail_dba \
+	--password cloudera \
+	--table orders \
+	--target-dir /user/cloudera/problem5/avro \
+	--as-avrodatafile \
+	--m 1
+hadoop fs -ls /user/cloudera/problem5/avro
+
+sqoop import \
+	--connect "jdbc:mysql://quickstart:3306/retail_db" \
+	--username retail_dba \
+	--password cloudera \
+	--table orders \
+	--target-dir  /user/cloudera/problem5/parquet \
+	--as-parquetfile \
+	-m 1
+
+hadoop fs -ls /user/cloudera/problem5/parquet
+
+orders_avro = sqlContext.read. \
+format("com.databricks.spark.avro"). \
+load("/user/cloudera/problem5/avro")
+
+orders_avro.show()
+
+sqlContext.setConf("spark.sql.parquet.compression.codec","snappy")
+orders_avro.write.parquet("user/cloudera/problem5/parquet-snappy-compress")
+
+hadoop fs -ls user/cloudera/problem5/parquet-snappy-compress
+
+orders_rdd = orders_avro. \
+map(lambda x : str(x[0]) + "\t" + str(x[1]) + "\t" + str(x[2]) +"\t" + x[3])
+
+orders_rdd. \
+saveAsTextFile("/user/cloudera/problem5/text-gzip-compress",
+               "org.apache.hadoop.io.compress.GzipCodec")
+
+hadoop fs -ls /user/cloudera/problem5/text-gzip-compress
+
+orders_rdd.map(lambda x: (None, x)). \
+saveAsSequenceFile("/user/cloudera/problem5/sequence")
+
+hadoop fs -ls /user/cloudera/problem5/sequence
+               
+orders_rdd.saveAsTextFile("/user/cloudera/problem5/text-snappy-compress",
+			  "org.apache.hadoop.io.compress.SnappyCodec")
+
+hadoop fs -ls /user/cloudera/problem5/text-snappy-compress
+
+orders_parquet =  sqlContext.read. \
+parquet("/user/cloudera/problem5/parquet-snappy-compress")
+orders_parquet.show()

@@ -1,0 +1,112 @@
+sqoop import-all-tables \
+	--connect "jdbc:mysql://quickstart:3306/retail_db" \
+	--username retail_dba \
+	--password cloudera \
+	--warehouse-dir /user/hive/warehouse/retail_stage.db \
+	--compress \
+	--compression-codec snappy \
+	--as-avrodatafile \
+	-m 1
+
+hadoop fs -ls /user/hive/warehouse/retail_stage.db 
+hadoop fs -ls /user/hive/warehouse/retail_stage.db/orders/
+
+hadoop fs -get /user/hive/warehouse/retail_stage.db/orders/part-m-00000.avro
+avro-tools getschema part-m-00000.avro > orders.avsc
+
+hadoop fs -mkdir /user/hive/schemas/orders 
+
+hadoop fs -put orders.avsc /user/hive/schemas/orders 
+
+hive 
+
+create external table orders_sqoop 
+STORED AS AVRO 
+LOCATION "/user/hive/warehouse/retail_stage.db/orders"
+TBLPROPERTIES('avro.schema.url'='/user/hive/schemas/orders/orders.avsc');
+
+select * from orders_sqoop x where x.order_date in 
+(select a.order_date from (select order_date, count(1) as total_orders 
+from orders_sqoop group by order_date order by total_orders desc, order_date desc limit 1) a);
+
+impala-shell
+ 
+invalidate metadata
+
+select * from orders_sqoop x where x.order_date in 
+(select a.order_date from (select order_date, count(1) as total_orders 
+from orders_sqoop group by order_date order by total_orders desc, order_date desc limit 1) a);
+
+hive
+create database reatail;
+
+create table orders_avro(
+order_id int,
+order_date date,
+order_customer_id int,
+order_status string
+)
+partitioned by (order_month string)
+STORED AS AVRO;
+
+insert overwrite table orders_avro partition(order_month)
+select order_id, to_date(from_unixtime(cast(order_date/1000 as int))),
+order_customer_id, order_status, 
+substr(to_date(from_unixtime(cast(order_date/1000 as int))), 1, 7) 
+from default.orders_sqoop;
+
+select * from orders_avro x where x.order_date in 
+(select a.order_date from (select order_date, count(1) as total_orders from orders_avro group by order_date order by total_orders desc, order_date desc limit 1) a);
+
+{
+  "type" : "record",
+  "name" : "orders",
+  "doc" : "Sqoop import of orders",
+  "fields" : [ {
+    "name" : "order_id",
+    "type" : [ "null", "int" ],
+    "default" : null,
+    "columnName" : "order_id",
+    "sqlType" : "4"
+  }, {
+    "name" : "order_date",
+    "type" : [ "null", "long" ],
+    "default" : null,
+    "columnName" : "order_date",
+    "sqlType" : "93"
+  }, {
+    "name" : "order_customer_id",
+    "type" : [ "null", "int" ],
+    "default" : null,
+    "columnName" : "order_customer_id",
+    "sqlType" : "4"
+  }, {
+    "name" : "order_status",
+    "type" : [ "null", "string" ],
+    "default" : null,
+    "columnName" : "order_status",
+    "sqlType" : "12"
+  }, {
+    "name" : "order_style",
+    "type" : [ "null", "string" ],
+    "default" : null,
+    "columnName" : "order_style",
+    "sqlType" : "12"
+  }, {
+    "name" : "order_zone",
+    "type" : [ "null", "int" ],
+    "default" : null,
+    "columnName" : "order_zone",
+    "sqlType" : "4"
+  }],
+  "tableName" : "orders"
+}
+
+hadoop fs -rm -R /user/hive/schemas/orders/* 
+
+insert into orders_sqoop values(8888888,1374735600000,11567,"xyz",9,"CLOSED");
+insert into orders_sqoop values(8888889,1374735600000,11568,"xyz",8,"CLOSED");
+
+select * from orders_sqoop x where x.order_date in 
+(select a.order_date from (select order_date, count(1) as total_orders 
+from orders_sqoop group by order_date order by total_orders desc, order_date desc limit 1) a);

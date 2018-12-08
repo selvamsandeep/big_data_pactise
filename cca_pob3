@@ -1,0 +1,54 @@
+sqoop import-all-tables \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+    --username retail_user \
+    --password itversity \
+    --warehouse-dir /user/hive/warehouse/prob3_retail_stage.db \
+    --compress \
+    --compression-codec snappy \
+    --as-avrodatafile \
+    -m 1
+
+
+ hadoop fs -ls  /user/hive/warehouse/prob3_retail_stage.db/orders  
+
+hadoop fs -get /user/hive/warehouse/prob3_retail_stage.db/orders/part-m-00000.avro
+avro-tools getschema part-m-00000.avro > orders.avsc
+
+hadoop fs -mkdir /user/selvamsand/schemas
+hadoop fs -mkdir /user/selvamsand/schemas/orders
+
+hadoop fs -copyFromLocal orders.avsc /user/selvamsand/schemas/orders/
+
+create external table orders_sqoop 
+STORED AS AVRO 
+LOCATION '/user/hive/warehouse/prob3_retail_stage.db/orders' 
+TBLPROPERTIES('avro.schema.url'='/user/selvamsand/schemas/orders/orders.avsc');
+
+select * 
+from orders_sqoop x
+Where x.order_date in 
+(select a.order_date from
+(select 
+Y.order_date, 
+count(1) as total_orders 
+from orders_sqoop Y 
+group by Y.order_date
+order by Y.order_date desc, total_orders desc limit 1) a);
+
+
+
+create table prob3_orders_avro 
+(order_id int,
+order_date date,
+order_customer_id int,
+order_status string)
+partitioned by (order_month string)
+STORED AS AVRO;
+
+insert overwrite table prob3_orders_avro partition(order_month)
+select  order_id,
+to_date(from_unixtime(cast(order_date/1000 as int))),
+order_customer_id,
+order_status,
+date_format(from_unixtime(cast(order_date/1000 as int)), 'YYYY-MM') as order_month
+from orders_sqoop;

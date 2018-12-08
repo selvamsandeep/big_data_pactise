@@ -1,0 +1,90 @@
+sqoop import \
+	--connect "jdbc:mysql://quickstart:3306/retail_db" \
+	--username retail_dba \
+	--password cloudera \
+	--table orders \
+	--as-avrodatafile \
+	--compress \
+	--compression-codec org.apache.hadoop.io.compress.SnappyCodec \
+	--target-dir /user/cloudera/problem1/orders \
+	-m 1
+
+hadoop fs -ls  /user/cloudera/problem1/orders
+hadoop fs -cat  /user/cloudera/problem1/orders/part-m-00000.avro | head
+
+sqoop import \
+	--connect "jdbc:mysql://quickstart:3306/retail_db" \
+	--username retail_dba \
+	--password cloudera \
+	--table order_items \
+	--as-avrodatafile \
+	--compress \
+	--compression-codec org.apache.hadoop.io.compress.SnappyCodec \
+	--target-dir /user/cloudera/problem1/order-items \
+	-m 1
+
+pyspark --master yarn --jars /home/cloudera/Downloads/spark-avro_2.10-2.0.1.jar
+
+order_df = sqlContext.read. \
+format("com.databricks.spark.avro"). \
+load("/user/cloudera/problem1/orders")
+
+order_df.show()
+
+order_item_df = sqlContext.read. \
+format("com.databricks.spark.avro"). \
+load("/user/cloudera/problem1/order-items")
+
+order_item_df.show()
+
+joined_df = order_df. \
+join(order_item_df, order_df.order_id == order_item_df.order_item_order_id)
+
+from pyspark.sql.functions import *
+
+result_df = joined_df. \
+groupby(to_date(from_unixtime(col("order_date")/1000)).alias("order_date"), col("order_status")). \
+agg(countDistinct(col("order_id")).alias("total_orders"), round(sum(col("order_item_subtotal")), 2).alias("total_amount")). \
+orderBy(col("order_date").desc(), col("order_status"),col("total_amount").desc(), col("total_orders"))
+
+result_df.show()
+
+joined_df.registerTempTable("joined_table")
+ 
+sqlContext.sql("select * from joined_table limit 10").show()
+
+result_sql = sqlContext. \
+sql("select to_date(from_unixtime(cast(order_date/1000 as int))) as formatted_order_date, \
+order_status,  round(sum(order_item_subtotal) ,2) as total_amount, \
+count(distinct(order_id)) as total_orders from joined_table \
+group by order_date, order_status \
+order by formatted_order_date desc, order_status, total_amount desc, total_orders")
+
+result_sql.show()
+
+result_rdd = joined_df. \
+map(lambda x : ((x[1], str(x[3])), (float(x[8]), int(x[0])))). \
+combineByKey(
+lambda x : (x[0], set([x[1]])), 
+lambda x, y : (x[0] + y[0], x[1] | set([y[1]])),
+lambda x, y : (x[0] + y[0], x[1] | y[1])). \
+map(lambda x :(x[0][0], x[0][1], x[1][0], len(x[1][1]))). \
+toDF().orderBy(col("_1").desc(), col("_2"), col("_3").desc(), col("_4"))
+
+result_rdd.show()
+
+sqlContext.setConf("spark.sql.parquet.compression.codec","gzip")
+result_df.write.parquet("/user/cloudera/problem1/result4a-gzip")
+hadoop fs -ls /user/cloudera/problem1/result4a-gzip
+
+sqlContext.setConf("spark.sql.parquet.compression.codec","snappy")
+result_sql.coalesce(1). \
+write.parquet("/user/cloudera/problem1/result4b-snappy")
+	
+hadoop fs -ls /user/cloudera/problem1/result4b-snappy
+
+result_rdd. \
+map(lambda x : str(x[0]) +","+ str(x[1]) +","+ str(x[2]) +","+ str(x[3])). \
+coalesce(1).saveAsTextFile("/user/cloudera/problem1/result4c-csv")
+
+hadoop fs -ls /user/cloudera/problem1/result4c-csv

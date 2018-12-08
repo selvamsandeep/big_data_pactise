@@ -1,0 +1,123 @@
+sqoop import \
+--connect "jdbc:mysql://quickstart.cloudera:3306/retail_db" \
+ --password cloudera \
+--username retail_dba \
+--table orders \
+--as-textfile  \
+--fields-terminated-by '\t' \
+--target-dir /user/cloudera/problem5/text \
+-m 1
+
+
+sqoop import \
+--connect "jdbc:mysql://quickstart.cloudera:3306/retail_db" \
+--password cloudera \
+--username retail_dba \
+--table orders \
+--as-avrodatafile \
+--target-dir /user/cloudera/problem5/avro \
+-m 1
+
+sqoop import \
+--connect "jdbc:mysql://quickstart.cloudera:3306/retail_db" \
+--password cloudera \
+--username retail_dba \
+--table orders \
+--as-parquetfile \
+--target-dir /user/cloudera/problem5/parquet -m 1
+
+pyspark --master yarn \
+--jars lib/spark-avro_2.10-2.0.1.jar
+
+orders = sqlContext.read.format("com.databricks.spark.avro"). \
+load("/user/cloudera/problem5/avro")
+
+orders.show()
+
+sqlContext.setConf("spark.sql.parquet.compression.codec","snappy")
+
+orders.repartition(1). \
+write. \
+parquet("/user/cloudera/problem5/parquet-snappy-compress")
+
+hadoop fs -ls /user/cloudera/problem5/parquet-snappy-compress
+
+orders_map = orders. \
+map(lambda x : str(x[0]) + '\t' + str(x[1]) + '\t' + str(x[2]) + '\t' + x[3])
+
+for i in orders_map.take(10):print(i)q
+
+orders_map. \
+saveAsTextFile(	"/user/cloudera/problem5/text-gzip-compress",
+compressionCodecClass="org.apache.hadoop.io.compress.GzipCodec")
+
+hadoop fs -ls /user/cloudera/problem5/text-gzip-compress
+
+orders_map. \
+map(lambda x: (None, x)). \
+saveAsSequenceFile("/user/cloudera/problem5/sequence")
+
+hadoop fs -ls /user/cloudera/problem5/sequence
+
+orders_parquet = sqlContext.read. \
+parquet("/user/cloudera/problem5/parquet-snappy-compress")
+
+sqlContext. \
+setConf("spark.sql.parquet.compression.codec","uncompressed")
+
+orders_parquet.write. \
+parquet("/user/cloudera/problem5/parquet-no-compress")
+
+hadoop fs -ls /user/cloudera/problem5/parquet-no-compress
+
+sqlContext. \
+setConf("spark.sql.avro.compression.codec","snappy")
+
+orders_parquet.write. \
+format("com.databricks.spark.avro"). \
+save("/user/cloudera/problem5/avro-snappy")
+
+hadoop fs -ls /user/cloudera/problem5/avro-snappy
+
+orders_avro = sqlContext.read. \
+format("com.databricks.spark.avro"). \
+load("/user/cloudera/problem5/avro-snappy")
+
+orders_avro.show()
+
+orders_avro.toJSON(). \
+saveAsTextFile("/user/cloudera/problem5/json-no-compress")
+
+hadoop fs -ls /user/cloudera/problem5/json-no-compress
+
+orders_avro.toJSON(). \
+saveAsTextFile("/user/cloudera/problem5/json-gzip",
+compressionCodecClass="org.apache.hadoop.io.compress.GzipCodec")
+
+hadoop fs -ls /user/cloudera/problem5/json-gzip
+
+orders_json = sqlContext.read. \
+json("/user/cloudera/problem5/json-gzip")
+
+orders_json. \
+map(lambda x: str(x[0])+','+str(x[1])+','+str(x[2])+','+x[3]). \
+saveAsTextFile('/user/cloudera/problem5/csv-gzip',
+compressionCodecClass="org.apache.hadoop.io.compress.GzipCodec")
+
+hadoop fs -ls /user/cloudera/problem5/csv-gzip
+
+hadoop fs -get /user/cloudera/problem5/sequence/part-00000
+
+cut -c-300 part-00000
+
+orders_seq = sc. \
+sequenceFile("/user/cloudera/problem5/sequence", 
+keyClass = "org.apache.hadoop.io.Text",
+valueClass = "org.apache.hadoop.io.Text")
+
+orders_seq. \
+map(lambda x : str(x[1]).split('\t')). \
+map(lambda x : (x[0], x[1], x[2], x[3])). \
+toDF().write.orc("/user/cloudera/problem5/orc")
+
+hadoop fs -ls "/user/cloudera/problem5/orc"

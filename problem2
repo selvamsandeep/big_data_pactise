@@ -1,0 +1,100 @@
+sqoop import \
+	--connect "jdbc:mysql://quickstart:3306/retail_db" \
+	--username retail_dba \
+	--password cloudera \
+	--table products \
+	--target-dir /user/cloudera/products \
+	--as-textfile \
+	--fields-terminated-by "|" \
+	-m 1
+
+hadoop fs -ls /user/cloudera/products
+hadoop fs -mkdir /user/cloudera/problem2
+hadoop fs -mkdir /user/cloudera/problem2/products
+
+hadoop fs -mv /user/cloudera/products/*  /user/cloudera/problem2/products
+
+hadoop fs -ls /user/cloudera/problem2/products
+
+hadoop fs -chmod 765 /user/cloudera/problem2/products/*
+
+pyspark --master yarn --jars /home/cloudera/Downloads/spark-avro_2.10-2.0.1.jar
+
+products_rdd = sc. \
+textFile("/user/cloudera/problem2/products/part-m-00000"). \
+map(lambda p : (
+	        int(p.split('|')[0]), 
+	        int(p.split('|')[1]), 
+	        p.split('|')[2],
+		p.split('|')[3],
+		float(p.split('|')[4]),
+		p.split('|')[5]
+		)
+    )
+
+for i in products_rdd.take(5):print(i)
+
+from pyspark.sql import Row
+
+product_df = products_rdd. \
+map(lambda p : Row(
+		product_id=p[0],
+		product_category_id=p[1],
+                product_name=p[2],
+ 		product_description=p[3],
+		product_price=p[4],
+		product_image=p[5]
+		)
+    ).toDF()	
+
+from pyspark.sql.functions import *
+
+product_df.show()
+
+res_df = product_df.where("product_price < 100"). \
+groupby("product_category_id"). \
+agg( 
+    max("product_price").alias("max_price"), 
+    countDistinct("product_id").alias("total_products"),
+    round(avg("product_price"), 2).alias("avg_price"),
+    min("product_price").alias("min_price")
+    ). \
+orderBy("product_category_id")
+
+res_df.show()	
+
+product_df.registerTempTable("products")
+
+res_sql = sqlContext. \
+sql("select product_category_id, max(product_price) as max_price, \
+count(distinct(product_id)) as total_product, \
+round(avg(product_price),2) as avg_price, \
+min(product_price) as min_price \
+from products where product_price < 100 \
+group by product_category_id order by product_category_id")
+
+res_sql.show()
+     		
+res_rdd = products_rdd. \
+filter(lambda p : p[4] < 100). \
+map(lambda p :(p[1], p[4])). \
+aggregateByKey(
+	(0.0, 0, 0.0, 999999999.0), 
+	lambda x, y : (max(x[0], y), x[1] + 1, x[2] + y, min(x[3], y)),
+	lambda x, y : (max(x[0], y[0]), x[1] + y[1], x[2] + y[2], min(x[3], y[3]))
+	). \
+map(lambda p :(p[0], p[1][0], p[1][1], p[1][2]/p[1][1], p[1][3])). \
+sortBy(lambda p: p[0], ascending=False)
+	 
+
+
+           
+for i in res_rdd.take(10):print(i)    
+
+sqlContext.setConf("spark.sql.avro.compression.codec","snappy")
+
+res_rdd.toDF().write.format("com.databricks.spark.avro"). \
+save("/user/cloudera/problem2/products/result-rdd")
+
+hadoop fs -ls /user/cloudera/problem2/products/result-rdd
+

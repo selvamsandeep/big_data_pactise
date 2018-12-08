@@ -1,0 +1,75 @@
+sqoop import  \
+    --connect "jdbc:mysql://quickstart:3306/retail_db" \
+    --username retail_dba \
+    --password cloudera \
+    --table orders \
+    --as-avrodatafile \
+    --target-dir /user/cloudera/problem7/prework \
+    -m 1
+
+ hadoop fs -ls  /user/cloudera/problem7/prework   
+
+
+# Name the components on this agent
+step1.sources = avro_source
+step1.sinks = hdfs_sink
+step1.channels = jdbc_channel
+
+# Describe/configure the source
+step1.sources.avro_source.type = avro
+step1.sources.avro_source.bind = localhost
+step1.sources.avro_source.port = 11112
+
+# Describe the sink
+step1.sinks.hdfs_sink.type = hdfs
+step1.sinks.hdfs_sink.hdfs.path = /user/cloudera/problem7/sink
+step1.sinks.hdfs_sink.hdfs.fileType = DataStream 
+step1.sinks.hdfs_sink.hdfs.fileSuffix = .avro
+step1.sinks.hdfs_sink.serializer = avro_event
+step1.sinks.hdfs_sink.serializer.compressionCodec=snappy
+
+# Use a channel which buffers events in memory
+step1.channels.jdbc_channel.type = jdbc
+
+
+# Bind the source and sink to the channel
+step1.sources.avro_source.channels = jdbc_channel
+step1.sinks.hdfs_sink.channel = jdbc_channel
+
+
+flume-ng agent --name step1 -c conf -f f.config
+flume-ng avro-client -H localhost -p 11112 -F 
+
+ hadoop fs -ls /user/cloudera/problem7/sink
+
+ # Name the components on this agent
+a1.sources = r1
+a1.sinks = k1
+a1.channels = c1
+
+# Describe/configure the source
+a1.sources.r1.type = exec
+a1.sources.r1.command = tail -F /opt/gen_logs/logs/access.log
+
+
+# Describe the sink
+a1.sinks.k1.type = hdfs
+a1.sinks.k1.hdfs.path = /user/cloudera/problem7/step2
+a1.sinks.k1.hdfs.hdfs.fileType = DataStream 
+a1.sinks.k1.hdfs.fileSuffix = .log
+a1.sinks.k1.hdfs.hdfs.writeFormat = Text
+
+# Use a channel which buffers events in memory
+a1.channels.c1.type = memory
+a1.channels.c1.capacity = 1000
+a1.channels.c1.transactionCapacity = 200
+
+# Bind the source and sink to the channel
+a1.sources.r1.channels = c1
+a1.sinks.k1.channel = c1
+
+flume-ng agent -n a1 -c conf -f f.conf
+start_logs
+stop_logs
+
+hadoop fs -ls /user/cloudera/problem7/step2

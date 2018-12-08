@@ -1,0 +1,219 @@
+sqoop import  \
+   --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+   --username retail_user  \
+   --password itversity \
+   --table categories 
+
+hadoop fs -ls
+
+sqoop import \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+    --username retail_user \
+    --password itversity \
+    --table categories \
+    --target-dir categories_target 
+
+hadoop fs -ls categories_target
+
+sqoop import \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+    --username retail_user \
+    --password itversity \
+    --table categories \
+    --warehouse-dir categories_warehouse 
+
+hadoop fs -ls -h categories_warehouse/categories   
+
+===================================
+
+hadoop fs -help
+
+hadoop fs -mkdir Employee
+
+hadoop fs -touchz Employee/quicktechie.txt
+
+madir Employee
+cd Employee
+vi quicktechie.txt
+vi hadoopexam.txt
+
+hadoop fs -put -f Employee
+hadoop fs -ls Employee
+
+hadoop fs -getmerge -nl Employee MergedEmployee.txt 
+
+hadoop fs -chmod 664 Employee/MergedEmployee.txt
+
+hadoop fs -get Employee Employee_hdfs
+
+======================================
+
+sqoop import \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+    --username retail_user \
+    --password itversity \
+    --table categories \
+    --target-dir categories_subset \
+    --where "category_id = 22" \
+    -m 1
+
+hadoop fs -ls categories_subset
+hadoop fs -cat categories_subset/part-m-00000
+
+sqoop import \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+    --username retail_user \
+    --password itversity \
+    --table categories \
+    --target-dir categories_subset_2 \
+    --where "category_id > 22" \
+    --m 1
+
+hadoop fs -ls categories_subset_2
+hadoop fs -cat categories_subset_2/part-m-00000    
+
+sqoop import \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+    --username retail_user \
+    --password itversity \
+    --table categories \
+    --target-dir categories_subset_3 \
+    --where "category_id >= 1 and category_id <= 22" \
+    --m 1
+
+hadoop fs -ls categories_subset_3
+hadoop fs -cat categories_subset_3/part-m-00000    
+
+sqoop import \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+    --username retail_user \
+    --password itversity \
+    --table categories \
+    --target-dir categories_subset_6 \
+    --where "category_id between 1 and 22" \
+    --fields-terminated-by '|' \
+    --m 1
+
+hadoop fs -ls categories_subset_6
+hadoop fs -cat categories_subset_6/part-m-00000 
+
+sqoop import \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+    --username retail_user \
+    --password itversity \
+    --table categories \
+    --warehouse-dir categories_subset_col \
+    --columns category_name,category_id \
+    --where "category_id between 1 and 22" \
+    --fields-terminated-by '|' \
+    -m1 
+
+hadoop fs -ls categories_subset_col/categories 
+hadoop fs -cat categories_subset_col/categories/part-m-00000
+
+
+sqoop import \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_export" \
+    --username retail_user \
+    --password itversity \
+    --table categories \
+    --warehouse-dir categories_subset_17 \
+    --where "category_id between 1 and 62" \
+    --fields-terminated-by '|' \
+    --null-string 'N' \
+    --null-non-string 'N' \
+    -m 1
+
+hadoop fs -ls categories_subset_17/categories 
+hadoop fs -cat categories_subset_17/categories/part-m-00000
+
+sqoop import-all-tables \
+    --connect "jdbc:mysql://ms.itversity.com:3306/retail_db" \
+    --username retail_user \
+    --password itversity \
+    --warehouse-dir categories_subset_all_tables
+    
+hadoop fs -ls categories_subset_all_tables
+
+sqoop import \
+    --connect jdbc:mysql://ms.itversity.com:3306/retail_db \
+    --username retail_user \
+    --password itversity \
+    --table categories \
+    --where "category_id between 1 and 22" \
+    --target-dir /user/selvamsand/raw/ \
+    --hive-import \
+    --create-hive-table \
+    --hive-table sqoop_import_selva.categories_subset \
+    -m 1
+
+
+    hadoop fs -ls /user/selvamsand/raw/
+    hadoop fs -ls /user/hive/warehouse/
+
+CREATE DATABASE IF NOT EXISTS Family 
+COMMENT 'This database will be used for collecting varies family data and their daily habits' 
+LOCATION '/user/selvamsand/family' 
+WITH DBPROPERTIES('Database creator'='selva','created_on'='2018-10-23');
+
+DESCRIBE DATABASE extended Family;
+
+USE Family;
+
+CREATE TABLE IF NOT EXISTS Family_Head(
+    name string,
+    business_places ARRAY<string>,
+    sex_age STRUCT<sex:string,age:int>,
+    FatherName_NuOfChild MAP<string,int>
+) ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '|'
+COLLECTION ITEMS TERMINATED BY ','
+MAP KEYS TERMINATED BY ':';
+
+sqoop list-tables \
+    --connect jdbc:mysql://ms.itversity.com:3306/retail_db \
+    --username retail_user \
+    --password itversity
+
+sqoop eval \
+    --connect jdbc:mysql://ms.itversity.com:3306/retail_db \
+    --username retail_user \
+    --password itversity \
+    --query "select count(1) from order_items"
+
+
+sqoop import-all-tables \
+    --connect jdbc:mysql://ms.itversity.com:3306/retail_db \
+    --username retail_user \
+    --password itversity \
+    --as-avrodatafile \
+    --warehouse-dir /user/hive/warehouse/selva_retail_stage.db \
+    -m 1
+
+ hadoop fs -ls /user/hive/warehouse/selva_retail_stage.db   
+
+sqoop import \
+    --connect jdbc:mysql://ms.itversity.com:3306/retail_db \
+    --username retail_user \
+    --password itversity \
+    --table departments \
+    --target-dir /user/selvamsand/sqoop_import_selva/departments \
+    --as-textfile \
+    -m 1
+hadoop fs -ls /user/selvamsand/sqoop_import_selva/departments     
+
+
+sqoop import \
+    --connect jdbc:mysql://ms.itversity.com:3306/retail_db \
+    --username retail_user \
+    --password itversity \
+    --query "select * from orders o join order_items oi \
+             on o.order_id = oi.order_item_order_id \
+             where \$CONDITIONS" \
+    --target-dir /user/selvamsand/sqoop_import_selva/order_join \
+    --split-by order_id \
+    -m2 
+
+hadoop fs -ls  /user/selvamsand/sqoop_import_selva/order_join 
+
+hadoop fs -cat  /user/selvamsand/sqoop_import_selva/order_join/part-m-00001 | tail
